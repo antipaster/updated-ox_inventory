@@ -249,7 +249,17 @@ local function openInventory(source, invType, data, ignoreSecurityChecks)
 		if right.player then
 			if right.open then return end
 
+			-- enforce proximity when accessing other players
 			right.coords = not ignoreSecurityChecks and GetEntityCoords(right.player.ped) or nil
+
+			if not ignoreSecurityChecks then
+				local leftCoords = GetEntityCoords(playerPed)
+				local rightCoords = GetEntityCoords(right.player.ped)
+
+				if #(leftCoords - rightCoords) > 2.0 then
+					return
+				end
+			end
 		end
 
 		if not ignoreSecurityChecks and right.coords then
@@ -287,13 +297,32 @@ end
 ---@param invType string
 ---@param data string|number|table
 lib.callback.register('ox_inventory:openInventory', function(source, invType, data)
+    -- harden player-to-player inventory access
+    if invType == 'otherplayer' then
+        invType = 'player'
+    end
+
     if invType == 'player' and source ~= data then
         local serverId = type(data) == 'table' and data.id or data
 
-        if source == serverId or type(serverId) ~= 'number' or not Player(serverId).state.canSteal then return end
+        -- valid numeric id and not self
+        if source == serverId or type(serverId) ~= 'number' then return end
+
+        -- target must be stealable
+        local target = Player(serverId)
+        if not target or not target.state.canSteal then return end
+
+        -- check to prevent spoofed client distances
+        local srcPed = GetPlayerPed(source)
+        local tgtPed = GetPlayerPed(serverId)
+        if not srcPed or not tgtPed then return end
+
+        local srcCoords = GetEntityCoords(srcPed)
+        local tgtCoords = GetEntityCoords(tgtPed)
+        if #(srcCoords - tgtCoords) > 2.0 then return end
     end
 
-	return openInventory(source, invType, data)
+    return openInventory(source, invType, data)
 end)
 
 ---@param netId number
